@@ -1,13 +1,14 @@
 package utils
 
 import (
+	"crypto/sha256"
 	"encoding/base32"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
 	"math/rand"
 	"net/http"
-	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -63,16 +64,10 @@ func GetPasswordHash(salt string, password string) string {
 	result := password + salt
 
 	for i := 0; i < 1000; i++ {
-		out, err := exec.Command("sh", "-c", "echo -n '"+result+"' | openssl sha256").Output()
-		if err != nil {
-			panic("Failed to generate the hash.")
-		}
-
-		outputRaw := string(out)
-		output := strings.Split(outputRaw, " ")
-		result = strings.TrimRight(output[1], "\n")
-
+		s := sha256.Sum256([]byte(result))
+		result = hex.EncodeToString(s[:])
 	}
+
 	return result
 }
 
