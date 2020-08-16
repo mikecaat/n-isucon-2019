@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ベンチマーク用
-VUS=1
+VUS=6
 BENCH_DURATION_SEC=60
 INITIALIZE_TIMEOUT_SEC=15
 
