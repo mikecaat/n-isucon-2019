@@ -540,7 +540,7 @@ func itemsGet(c web.C, w http.ResponseWriter, r *http.Request) {
 
 	} else {
 
-		query := "SELECT id, title, created_at, likes from items"
+		query := "SELECT id, title, user_id, created_at, likes from items"
 		rows, err := db.Query(query)
 		if err != nil {
 			utils.SetStatus(w, 500)
@@ -549,14 +549,22 @@ func itemsGet(c web.C, w http.ResponseWriter, r *http.Request) {
 		}
 
 		for rows.Next() {
+			var userID int
 			result := Item{}
 
-			err := rows.Scan(&result.ID, &result.Title, &result.CreatedAt, &result.likes)
+			err := rows.Scan(&result.ID, &result.Title, &userID, &result.CreatedAt, &result.likes)
 			if err != nil {
 				utils.SetStatus(w, 500)
 				panic("Unable to scan from the result.")
 				return
 			}
+			user, err := SelectUserByUserID(db, userID)
+			if err != nil {
+				panic("Unexpected err.")
+			}
+			result.Username = user.Username
+			fmt.Println("res: %v", result)
+			items.Items = append(items.Items, result)
 
 			if result.likes.Valid == false {
 				result.likeCount = 0
@@ -1360,7 +1368,6 @@ func likeGet(c web.C, w http.ResponseWriter, r *http.Request) {
 func likePost(c web.C, w http.ResponseWriter, r *http.Request) {
 
 	var like Likes
-	var user *User
 
 	itemID := c.URLParams["item_id"]
 	session, err := store.Get(r, "session")
@@ -1380,24 +1387,7 @@ func likePost(c web.C, w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	// get user ID
-
 	username, _ := session.Values["username"].(string)
-	user, err = SelectUserByUsername(db, username)
-	if err != nil {
-		errCode, _ := strconv.Atoi(fmt.Sprintf("%s", err))
-		switch errCode {
-		case DBNOTFOUNDERR:
-			utils.SetStatus(w, 404)
-		case DBQUERYERR:
-			panic("Unable to get the query results.")
-		case DBSCANERR:
-			panic("Unable to scan from the result.")
-		default:
-			panic(err)
-		}
-		return
-	}
 
 	query := "SELECT likes from items WHERE id=(?)"
 	rows, err := db.Query(query, itemID)
@@ -1414,21 +1404,20 @@ func likePost(c web.C, w http.ResponseWriter, r *http.Request) {
 	rows.Scan(&like.likes)
 
 	if like.likes.Valid == false {
-		like.Likes = "" + fmt.Sprint(user.ID)
+		like.Likes = "" + fmt.Sprint(username)
 	} else {
 		like.Likes = ""
 		likeStrs := strings.Split(like.likes.String, ",")
 
 		fmt.Printf("like.likes.String:%v\n", like.likes.String)
 		fmt.Printf("likeStrs:%v\n", likeStrs)
-		fmt.Printf("user.ID:%v\n", user.ID)
+		fmt.Printf("username:%v\n", username)
 
-		userID := fmt.Sprint(user.ID)
 		// search loop
 		for _, s := range likeStrs {
 			fmt.Println(s)
 
-			if s == userID {
+			if s == username {
 				continue
 			}
 
@@ -1440,9 +1429,9 @@ func likePost(c web.C, w http.ResponseWriter, r *http.Request) {
 		}
 		// append
 		if like.Likes == "" {
-			like.Likes = userID
+			like.Likes = username
 		} else {
-			like.Likes += "," + userID
+			like.Likes += "," + username
 		}
 		like.LikeCount = len(likeStrs)
 	}
@@ -1480,7 +1469,6 @@ func likePost(c web.C, w http.ResponseWriter, r *http.Request) {
 func likeDelete(c web.C, w http.ResponseWriter, r *http.Request) {
 
 	var like Likes
-	var user *User
 
 	itemID := c.URLParams["item_id"]
 
@@ -1500,25 +1488,6 @@ func likeDelete(c web.C, w http.ResponseWriter, r *http.Request) {
 		panic("Unable to connect the DB.")
 	}
 	defer db.Close()
-
-	// get user ID
-
-	username, _ := session.Values["username"].(string)
-	user, err = SelectUserByUsername(db, username)
-	if err != nil {
-		errCode, _ := strconv.Atoi(fmt.Sprintf("%s", err))
-		switch errCode {
-		case DBNOTFOUNDERR:
-			utils.SetStatus(w, 404)
-		case DBQUERYERR:
-			panic("Unable to get the query results.")
-		case DBSCANERR:
-			panic("Unable to scan from the result.")
-		default:
-			panic(err)
-		}
-		return
-	}
 
 	query := "SELECT likes from items WHERE id=(?)"
 	rows, err := db.Query(query, itemID)
@@ -1540,26 +1509,26 @@ func likeDelete(c web.C, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userIDExists := false
+	usernameExists := false
 	like.Likes = ""
 	likeStrs := strings.Split(like.likes.String, ",")
-	userID := fmt.Sprint(user.ID)
+	username, _ := session.Values["username"].(string)
 
 	// search loop
 	for _, s := range likeStrs {
-		if s != userID {
+		if s != username {
 			if like.Likes == "" {
 				like.Likes = s
 			} else {
 				like.Likes += "," + s
 			}
 		} else {
-			userIDExists = true
+			usernameExists = true
 		}
 	}
 
 	// If the user does not exist
-	if userIDExists == false {
+	if usernameExists == false {
 		utils.SetStatus(w, 404)
 		return
 	}
